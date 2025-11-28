@@ -1,0 +1,55 @@
+# ==========================
+# PYTHON BASICS
+# ==========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.pkl
+*.egg
+*.egg-info/
+*.so
+
+# ==========================
+# VIRTUAL ENVIRONMENTS
+# ==========================
+.venv/
+venv/
+env/
+ENV/
+
+# ==========================
+# BUILD ARTIFACTS
+# ==========================
+build/
+dist/
+wheels/
+MANIFEST
+*.spec
+
+# ==========================
+# PACKAGING TOOLS
+# ==========================
+pip-wheel-metadata/
+*.egg-info/
+.eggs/
+
+# ==========================
+# PYSHARK PCAP FILES
+# ==========================
+*.pcap
+*.pcapng
+
+# ==========================
+# EDITOR / OS TRASH
+# ==========================
+.DS_Store
+Thumbs.db
+
+# ==========================
+# MISC
+# ==========================
+.idea/
+.vscode/
+*.log

@@ -1,0 +1,4 @@
+pyshark
+dnspython
+rich
+click
