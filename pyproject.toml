@@ -3,11 +3,22 @@ requires = ["setuptools>=60"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dnssec-toolkit"
+name = "dnssec-cli"
 version = "1.0.0"
 description = "A professional CLI toolkit for DNSSEC scanning and DNS forensic analysis."
 readme = "README.md"
 requires-python = ">=3.8"
+
+
+authors = [
+    {name = "Julio Briones", email = "julio.brionesw@gmail.com"}
+]
+
+urls = {
+    "Homepage" = "https://github.com/julesbw/dnssec-toolkit",
+    "Repository" = "https://github.com/julesbw/dnssec-toolkit",
+    "Issues" = "https://github.com/julesbw/dnssec-toolkit/issues"
+}
 dependencies = [
     "click",
     "rich",
