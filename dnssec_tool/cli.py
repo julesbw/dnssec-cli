@@ -9,6 +9,7 @@ from dnssec_tool.dig import dig_capture, dig_full
 from dnssec_tool.parser import parse_pcap, parse_dig_output
 from dnssec_tool.validator import validate_chain
 from dnssec_tool.resolver_chain import build_trust_tree, print_trust_tree
+from dnssec_tool.analyzer import audit_domain
 
 console = Console()
 
@@ -190,6 +191,152 @@ def chain(domain, extended):
     chain_str = " → ".join(parts) + f" → {status}"
 
     console.print(chain_str)
+
+# =======================================================
+# ANALYZE: analizar un PCAP/PCAPNG externo
+# =======================================================
+@cli.command()
+@click.argument("pcap_file")
+@click.option("--json", "as_json", is_flag=True, help="Salida en JSON.")
+def analyze(pcap_file, as_json):
+    """Analiza un archivo PCAP/PCAPNG y extrae registros DNS."""
+
+    import os
+    from dnssec_tool.parser import parse_pcap
+
+    if not os.path.exists(pcap_file):
+        console.print(f"[red]❌ Archivo no encontrado:[/] {pcap_file}")
+        return
+
+    console.print(f"[cyan]📎 Analizando PCAP:[/] {pcap_file}")
+
+    records = parse_pcap(pcap_file)
+
+    if not records or all(len(v) == 0 for v in records.values()):
+        console.print("[yellow]⚠ No se encontraron paquetes DNS en el archivo.[/]")
+        return
+
+    if as_json:
+        print_json(records)
+    else:
+        print_tables(records, f"PCAP: {pcap_file}", validate=False)
+
+
+# =======================================================
+# AUDIT: análisis completo por RFC
+# =======================================================
+@cli.command()
+@click.argument("domain")
+@click.option("--json", "as_json", is_flag=True, help="Salida en formato JSON.")
+def audit(domain, as_json):
+    """
+    Analiza un dominio según las especificaciones de DNSSEC (Act 4).
+    Usa dig + parser y corre validaciones sobre DNSKEY, RRSIG, NSEC/NSEC3, DS y TTL.
+    """
+    console.print(f"[bold cyan]🧪 Auditoría DNSSEC para:[/] {domain}")
+
+    output = dig_full(domain)
+    records = parse_dig_output(output)
+
+    summary = audit_domain(domain, records)
+
+    if as_json:
+        console.print_json(data=summary)
+        return
+
+    # ----- Imprimir resumen humano bonito -----
+    # 1) DS / cadena
+    ds = summary["ds_chain"]
+    if ds["chain_status"] == "valid":
+        console.print(f"[bold green]✔ Cadena de confianza íntegra:[/] {ds['detail']}")
+    elif ds["chain_status"] == "no_dnssec":
+        console.print(f"[yellow]⚠ El dominio no usa DNSSEC:[/] {ds['detail']}")
+    else:
+        console.print(f"[bold red]✘ Cadena de confianza rota:[/] {ds['detail']}")
+    console.print()
+
+    # 2) DNSKEY
+    if summary["dnskey"]:
+        table = Table(title="DNSKEY", header_style="bold cyan")
+        table.add_column("name")
+        table.add_column("alg")
+        table.add_column("alg_name")
+        table.add_column("allowed")
+        table.add_column("role")
+        table.add_column("proto_ok")
+        table.add_column("ttl")
+
+        for k in summary["dnskey"]:
+            table.add_row(
+                k["name"] or "",
+                str(k["algorithm"]),
+                k["algorithm_name"],
+                "✔" if k["algorithm_allowed"] else "✘",
+                k["role"],
+                "✔" if k["proto_ok"] else "✘",
+                str(k["ttl"]),
+            )
+        console.print(table)
+        console.print()
+    else:
+        console.print("[yellow]No se encontraron DNSKEY.[/]\n")
+
+    # 3) RRSIG
+    if summary["rrsig"]:
+        table = Table(title="RRSIG", header_style="bold cyan")
+        table.add_column("name")
+        table.add_column("type")
+        table.add_column("alg")
+        table.add_column("status")
+        table.add_column("inception")
+        table.add_column("expiration")
+        table.add_column("signer")
+        table.add_column("key_tag")
+
+        for r in summary["rrsig"]:
+            table.add_row(
+                r["name"] or "",
+                r["type_covered"] or "",
+                f"{r['algorithm']} ({r['algorithm_name']})",
+                r["status"],
+                r["sig_inception"] or "",
+                r["sig_expiration"] or "",
+                r["signer_name"] or "",
+                str(r["key_tag"]),
+            )
+        console.print(table)
+        console.print()
+    else:
+        console.print("[yellow]No se encontraron firmas RRSIG.[/]\n")
+
+    # 4) NSEC / NSEC3
+    nsec = summary["nsec"]
+    console.print(
+        f"[bold]NSEC/NSEC3:[/] modo = {nsec['mode']} "
+        f"(NSEC={nsec['has_nsec']}, NSEC3={nsec['has_nsec3']}, NSEC3PARAM={nsec['has_nsec3param']})\n"
+    )
+
+    # 5) TTL stats
+    ttl_stats = summary["ttl_stats"]
+    if ttl_stats:
+        table = Table(title="TTL por tipo de registro", header_style="bold cyan")
+        table.add_column("Tipo")
+        table.add_column("Min")
+        table.add_column("Max")
+        table.add_column("Avg")
+        table.add_column("Count")
+
+        for rtype, st in ttl_stats.items():
+            table.add_row(
+                rtype,
+                str(st["min"]),
+                str(st["max"]),
+                f"{st['avg']:.1f}",
+                str(st["count"]),
+            )
+        console.print(table)
+    else:
+        console.print("[yellow]No se pudieron calcular métricas de TTL.[/]")
 
 
 @cli.command()

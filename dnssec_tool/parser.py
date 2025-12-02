@@ -2,8 +2,25 @@
 
 import re
 from collections import defaultdict
+import pyshark
 
 records = ["DNSKEY", "DS", "RRSIG", "NSEC", "NSEC3", "NSEC3PARAM"]
+TYPE_MAP = {
+    1: "A",
+    2: "NS",
+    5: "CNAME",
+    6: "SOA",
+    15: "MX",
+    16: "TXT",
+    28: "AAAA",
+    43: "DS",
+    46: "RRSIG",
+    47: "NSEC",
+    48: "DNSKEY",
+    50: "NSEC3",
+    51: "NSEC3PARAM"
+}
+
 
 # ===========================
 # REGEX universales
@@ -29,8 +46,11 @@ DS_RE = re.compile(
 
 RRSIG_RE = re.compile(
     r"(?P<name>\S+)\s+(?P<ttl>\d+)\s+IN\s+RRSIG\s+"
-    r"(?P<type>\S+)\s+(?P<algorithm>\d+)\s+(?P<labels>\d+)"
+    r"(?P<type_covered>\S+)\s+(?P<algorithm>\d+)\s+(?P<labels>\d+)\s+"
+    r"(?P<orig_ttl>\d+)\s+(?P<sig_exp>\d+)\s+(?P<sig_inc>\d+)\s+"
+    r"(?P<key_tag>\d+)\s+(?P<signer_name>\S+)"
 )
+
 
 NSEC_RE = re.compile(
     r"(?P<name>\S+)\s+(?P<ttl>\d+)\s+IN\s+NSEC\s+(?P<next>\S+)"
@@ -151,7 +171,96 @@ def parse_dig_output(output: str):
 
 def parse_pcap(path):
     """
-    Placeholder provisional—no analiza PCAP todavía.
-    El CLI usará fallback a parseo de texto.
+    Analiza un PCAP y extrae registros DNS usando PyShark.
+    Detecta queries y responses, mapea TYPE → nombre correcto.
     """
-    return {}
+
+    results = defaultdict(list)
+
+    TYPE_MAP = {
+        1: "A",
+        2: "NS",
+        5: "CNAME",
+        6: "SOA",
+        15: "MX",
+        16: "TXT",
+        28: "AAAA",
+        43: "DS",
+        46: "RRSIG",
+        47: "NSEC",
+        48: "DNSKEY",
+        50: "NSEC3",
+        51: "NSEC3PARAM"
+    }
+
+    try:
+        cap = pyshark.FileCapture(
+            path,
+            display_filter="dns",
+            keep_packets=False
+        )
+    except Exception as e:
+        print("ERROR abriendo pcap:", e)
+        return {}
+
+    for pkt in cap:
+        try:
+            if not hasattr(pkt, "dns"):
+                continue
+
+            dns = pkt.dns
+
+            # ======================================
+            # 1) Query
+            # ======================================
+            if hasattr(dns, "qry_type"):
+                qtype = int(dns.qry_type)
+                rtype = TYPE_MAP.get(qtype, str(qtype))
+
+                entry = {"type": rtype}
+
+                if hasattr(dns, "qry_name"):
+                    entry["name"] = dns.qry_name
+
+                results[rtype].append(entry)
+
+            # ======================================
+            # 2) Response
+            # ======================================
+            if hasattr(dns, "resp_type"):
+                rtype_raw = int(dns.resp_type)
+                rtype = TYPE_MAP.get(rtype_raw, str(rtype_raw))
+
+                entry = {"type": rtype}
+
+                if hasattr(dns, "resp_name"):
+                    entry["name"] = dns.resp_name
+
+                if hasattr(dns, "resp_ttl"):
+                    entry["ttl"] = dns.resp_ttl
+
+                # A
+                if hasattr(dns, "a"):
+                    entry["addr"] = dns.a
+
+                # AAAA
+                if hasattr(dns, "aaaa"):
+                    entry["addr"] = dns.aaaa
+
+                # DNSKEY
+                if hasattr(dns, "dnskey_key"):
+                    entry["key"] = dns.dnskey_key
+
+                # DS
+                if hasattr(dns, "ds_digest"):
+                    entry["digest"] = dns.ds_digest
+
+                results[rtype].append(entry)
+
+        except Exception:
+            continue
+
+    return dict(results)
+
+
+
