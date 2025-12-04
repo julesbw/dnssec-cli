@@ -338,6 +338,58 @@ def audit(domain, as_json):
     else:
         console.print("[yellow]No se pudieron calcular métricas de TTL.[/]")
 
+# =======================================================
+# Subcomando: batch
+# Procesa un archivo .txt con una lista de dominios
+# =======================================================
+@cli.command()
+@click.argument("file_path")
+@click.option("--json", "json_out", default=None,
+              help="Guardar resultados en un archivo JSON")
+def batch(file_path, json_out):
+    """
+    Lee un archivo .txt y ejecuta audit() para cada dominio.
+    """
+
+    console.print(f"[bold cyan]📁 Ejecutando batch DNSSEC desde:[/] {file_path}")
+
+    # Cargar dominios del archivo
+    try:
+        with open(file_path, "r") as f:
+            domains = [line.strip() for line in f if line.strip()]
+    except Exception as e:
+        console.print(f"[red]No se pudo leer el archivo:[/] {e}")
+        return
+
+    if not domains:
+        console.print("[yellow]El archivo no contiene dominios.[/]")
+        return
+
+    console.print(f"[green]✔ Dominios cargados:[/] {len(domains)}\n")
+
+    results = []
+
+    # Ejecutar auditoría para cada dominio
+    for domain in domains:
+        console.print(f"[cyan]🔍 Analizando:[/] {domain}")
+
+        dig_output = dig_full(domain)
+        records = parse_dig_output(dig_output)
+        summary = audit_domain(domain, records)
+
+        results.append(summary)
+
+    # Guardar JSON si el usuario lo pidió
+    if json_out:
+        try:
+            with open(json_out, "w", encoding="utf-8") as f:
+                json.dump(results, f, indent=4, ensure_ascii=False)
+            console.print(f"\n[bold green]✔ Resultados guardados en:[/] {json_out}")
+        except Exception as e:
+            console.print(f"[red]Error escribiendo JSON:[/] {e}")
+
+    console.print("\n[bold green]✔ Batch finalizado.[/]")
+
 
 @cli.command()
 def help():
@@ -375,7 +427,7 @@ def help():
 
     table.add_row(
         "help",
-        "Muestra esta ayuda mejorada."
+        "Muestra esta ayuda extendida."
     )
 
     console.print(table)
